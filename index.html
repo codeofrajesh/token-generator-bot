@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual Token Verification App</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f4f4f9; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; width: 350px; }
+        h2 { color: #333; margin-bottom: 5px; }
+        .status { margin: 15px 0; padding: 15px; border-radius: 8px; font-weight: bold; word-break: break-all; display: none; }
+        .success { background: #d4edda; color: #155724; display: block; }
+        .error { background: #f8d7da; color: #721c24; display: block; }
+        input { width: 90%; padding: 12px; margin: 15px 0; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; text-align: center; }
+        button { background: #0088cc; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; transition: 0.3s; width: 100%; margin-bottom: 10px; }
+        button:hover { background: #006699; }
+        .secondary-btn { background: #6c757d; }
+        .secondary-btn:hover { background: #5a6268; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Unlock App</h2>
+    <p>User ID: <strong id="userIdDisplay">app_User123</strong></p>
+    
+    <button id="generateBtn" class="secondary-btn">1. Get Token via Telegram</button>
+
+    <input type="text" id="tokenInput" placeholder="Paste your 16-digit token here">
+    <button id="verifyBtn">2. Verify Token</button>
+
+    <div id="statusBox" class="status"></div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    // Notice we changed 'onValue' to 'get' for a one-time check
+    import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+    // 🔴 YOUR FIREBASE CONFIG GOES HERE 🔴
+    const firebaseConfig = {
+        apiKey: "AIzaSyCErJLSFA1tRJnHp_GlGpWHgM3RH3giZTQ",
+        authDomain: "testapp-49380.firebaseapp.com",
+        databaseURL: "https://testapp-49380-default-rtdb.asia-southeast1.firebasedatabase.app/",
+        projectId: "testapp-49380",
+        storageBucket: "testapp-49380.firebasestorage.app",
+        messagingSenderId: "353884696585",
+        appId: "1:353884696585:web:bb60f050c464739d1788d8",
+        measurementId: "G-8V6RQJ7TYW"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const testUserId = "app_User123";
+    
+    // 🔴 YOUR BOT USERNAME GOES HERE 🔴
+    const botUrl = `https://t.me/gentokenRJbot?start=${testUserId}`;
+
+    // Step 1: Open Bot
+    document.getElementById("generateBtn").addEventListener("click", () => {
+        window.open(botUrl, "_blank");
+    });
+
+    // Step 2: Manual Verification
+    document.getElementById("verifyBtn").addEventListener("click", async () => {
+        const userInput = document.getElementById("tokenInput").value.trim();
+        const statusBox = document.getElementById("statusBox");
+
+        if (!userInput) {
+            statusBox.className = "status error";
+            statusBox.innerText = "Please paste a token first!";
+            return;
+        }
+
+        statusBox.className = "status";
+        statusBox.style.display = "block";
+        statusBox.innerText = "Checking database...";
+
+        try {
+            // Ask Firebase for this specific user's token data
+            const tokenRef = ref(db, `users/${testUserId}/auth`);
+            const snapshot = await get(tokenRef);
+
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                
+                // Compare the typed token against the database token
+                if (data.token === userInput) {
+                    // Check if it's expired (optional, but good practice on the frontend too)
+                    const currentTime = Math.floor(Date.now() / 1000);
+                    if (currentTime > data.expires_at) {
+                        statusBox.className = "status error";
+                        statusBox.innerText = "❌ Token expired. Please generate a new one.";
+                    } else {
+                        statusBox.className = "status success";
+                        statusBox.innerText = "✅ Access Granted! Token is valid.";
+                    }
+                } else {
+                    statusBox.className = "status error";
+                    statusBox.innerText = "❌ Invalid token. Try again.";
+                }
+            } else {
+                statusBox.className = "status error";
+                statusBox.innerText = "❌ No token found for this user. Generate one first.";
+            }
+        } catch (error) {
+            console.error(error);
+            statusBox.className = "status error";
+            statusBox.innerText = "Database connection error.";
+        }
+    });
+</script>
+</body>
+</html>

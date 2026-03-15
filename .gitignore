@@ -1,0 +1,9 @@
+# Security
+.env
+serviceAccountKey.json
+
+# Python caches
+__pycache__/
+*.pyc
+venv/
+env/

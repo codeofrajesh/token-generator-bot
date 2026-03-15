@@ -1,0 +1,6 @@
+pyrogram
+tgcrypto
+firebase-admin
+python-dotenv
+requests
+motor==3.3.2
