@@ -37,6 +37,7 @@ async def admin_panel(client: Client, message: Message):
 
 @Client.on_callback_query(filters.regex("^admin_"))
 async def admin_callbacks(client: Client, query: CallbackQuery):
+    print(f"🔘 ADMIN BUTTON CLICKED: {query.data} by User {query.from_user.id}")
     data = query.data
     admin_id = query.from_user.id
     is_coadmin = await db.is_coadmin(admin_id)
