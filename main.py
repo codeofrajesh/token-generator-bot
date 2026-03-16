@@ -36,10 +36,8 @@ app = Client(
 if __name__ == "__main__":
     logger.info("Starting the Token Generator Bot...")
     initialize_firebase()
-    app.run()
-
-if __name__ == "__main__":
-    # START THE FLASK SERVER FIRST
+# START THE FLASK SERVER FIRST
+    logger.info("Triggering Flask keep_alive thread...")
     keep_alive()
     time.sleep(2)
     # THEN START THE BOT
