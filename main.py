@@ -41,7 +41,7 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     # START THE FLASK SERVER FIRST
     keep_alive()
-    
+    time.sleep(2)
     # THEN START THE BOT
     print("Starting bot...")
     app.run()    
