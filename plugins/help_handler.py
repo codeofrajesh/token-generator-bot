@@ -22,23 +22,3 @@ async def help_command(client: Client, message: Message):
     ])
 
     await message.reply_text(help_text, reply_markup=keyboard)
-
-
-# Optional: Handle the "Main Menu" button click to show the start menu again
-@Client.on_callback_query(filters.regex("^main_menu_return$"))
-async def return_to_main_menu(client: Client, callback_query):
-    # This recreates the main menu from your start_handler
-    from config import Config
-    
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Join Channel", url=Config.JOIN_CHANNEL_URL)], 
-        [
-            InlineKeyboardButton("How to use", callback_data="help_usage"),
-            InlineKeyboardButton("Generate Key", callback_data="demo_generate")
-        ]
-    ])
-    
-    await callback_query.message.edit_text(
-        "Welcome back to the Token Generator Bot!\n\nPlease select an option below:",
-        reply_markup=keyboard
-    )

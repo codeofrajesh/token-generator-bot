@@ -9,34 +9,32 @@ from core.state import active_verifications
 from core.security import generate_secure_token, verify_time_gap, is_expired
 from core.shortener_api import get_short_link
 from core.firebase_db import save_token_to_firebase
-
-# Main /start command handler
 from core.database import db
 
 # Main /start command handler
 @Client.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
     args = message.command
-    
-    # Fetch active shorteners from MongoDB
+    await db.add_user(
+        message.from_user.id, 
+        message.from_user.first_name, 
+        message.from_user.username
+    )
     active_shorteners = await db.get_all_shorteners()
     
     # --- 1. Main Menu (No deep-link arguments) ---
     if len(args) == 1:
-        buttons = [[InlineKeyboardButton("Join Channel", url=Config.JOIN_CHANNEL_URL)]]
+        main_url = await db.get_main_url()
+        dev_url = Config.DEVELOPER_URL
         
-        # DYNAMICALLY ADD DEMO SERVER BUTTONS
-        server_row = []
-        for s in active_shorteners:
-            server_row.append(InlineKeyboardButton(f"🔑 {s['name']}", callback_data=f"demo_gen_{s['_id']}"))
-        
-        if server_row:
-            # Split into chunks of 2 buttons per row for a clean UI
-            buttons.extend([server_row[i:i+2] for i in range(0, len(server_row), 2)])
-        else:
-            buttons.append([InlineKeyboardButton("⚠️ No Servers Configured", callback_data="help_usage")])
-            
-        buttons.append([InlineKeyboardButton("How to use", callback_data="help_usage")])
+        buttons = [
+            [InlineKeyboardButton("📢 TOKEN Channel", url=Config.JOIN_CHANNEL_URL)],
+            [
+                InlineKeyboardButton("🔑 Generate Key", callback_data="show_demo_servers"),
+                InlineKeyboardButton("👨‍💻 Developer", url=dev_url)
+            ],
+            [InlineKeyboardButton("💬 Main group", url=main_url)]
+        ]
         
         start_text = (
             "✨ **Welcome to the Secure Token Generator!** ✨\n\n"
@@ -62,7 +60,7 @@ async def start_command(client: Client, message: Message):
         # DYNAMICALLY ADD APP SERVER BUTTONS
         for s in active_shorteners:
             # We pass both the shortener ID and the app_user_id in the callback
-            server_row.append(InlineKeyboardButton(f"Verify via {s['name']}", callback_data=f"app_gen_{s['_id']}_{app_user_id}"))
+            server_row.append(InlineKeyboardButton(f" 🔑{s['name']}", callback_data=f"app_gen_{s['_id']}_{app_user_id}"))
             
         if server_row:
             buttons.extend([server_row[i:i+2] for i in range(0, len(server_row), 2)])
@@ -154,11 +152,61 @@ async def start_command(client: Client, message: Message):
 
 
 # --- 4. Callback Query Handler for the Inline Menu Buttons ---
-@Client.on_callback_query(filters.regex("^(demo_gen_|app_gen_|help_usage|main_menu_return)"))
+@Client.on_callback_query(filters.regex("^(show_demo_servers|demo_gen_|app_gen_|help_usage|main_menu_return)"))
 async def callback_handler(client: Client, query: CallbackQuery):
     data = query.data
+    # --- RETURN TO MAIN MENU ---
+    if data == "main_menu_return":
+        main_url = await db.get_main_url()
+        dev_url = Config.DEVELOPER_URL
+        
+        buttons = [
+            [InlineKeyboardButton("📢 TOKEN Channel", url=Config.JOIN_CHANNEL_URL)],
+            [
+                InlineKeyboardButton("🔑 Generate Key", callback_data="show_demo_servers"),
+                InlineKeyboardButton("👨‍💻 Developer", url=dev_url)
+            ],
+            [InlineKeyboardButton("💬 Main group", url=main_url)]
+        ]
+        
+        start_text = (
+            "✨ **Welcome to the Secure Token Generator!** ✨\n\n"
+            "I am your automated bridge for secure, token-based authentication.\n\n"
+            "**What I do:**\n"
+            "🔹 Generate cryptographic access tokens.\n"
+            "🔹 Protect links with anti-bypass timers.\n"
+            "🔹 Sync real-time with your app database.\n\n"
+            "👇 */help to know more*"
+        )
+
+        await query.message.edit_text(start_text, reply_markup=InlineKeyboardMarkup(buttons))
+        return
+
+    # --- SHOW DEMO SERVERS SUBMENU ---
+    elif data == "show_demo_servers":
+        active_shorteners = await db.get_all_shorteners()
+        
+        server_row = []
+        for s in active_shorteners:
+            server_row.append(InlineKeyboardButton(f"🔑 {s['name']}", callback_data=f"demo_gen_{s['_id']}"))
+        
+        buttons = []
+        if server_row:
+            # This creates the 2-column layout you asked for!
+            buttons.extend([server_row[i:i+2] for i in range(0, len(server_row), 2)])
+        else:
+            buttons.append([InlineKeyboardButton("⚠️ No Servers Configured", callback_data="help_usage")])
+            
+        buttons.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu_return")])
+        
+        await query.message.edit_text(
+            "**Server Selection**\n\n"
+            "Please select a server below to generate your token:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
     
-    if data == "help_usage":
+    elif data == "help_usage":
         await query.answer("Click any Server to test the demo verification flow!", show_alert=True)
         return
         
@@ -210,29 +258,4 @@ async def callback_handler(client: Client, query: CallbackQuery):
             reply_markup=keyboard
         )
 
-@Client.on_callback_query(filters.regex("^main_menu_return$"))
-async def return_to_main_menu(client: Client, callback_query):
-    # This recreates the main menu from your start_handler
-    from config import Config
-    
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Join Channel", url=Config.JOIN_CHANNEL_URL)], 
-        [
-            InlineKeyboardButton("How to use", callback_data="help_usage"),
-            InlineKeyboardButton("Generate Key", callback_data="demo_generate")
-        ]
-    ])
-    start_text = (
-            "✨ **Welcome to the Secure Token Generator!** ✨\n\n"
-            "I am your automated bridge for secure, token-based authentication.\n\n"
-            "**What I do:**\n"
-            "🔹 Generate cryptographic access tokens.\n"
-            "🔹 Protect links with anti-bypass timers.\n"
-            "🔹 Sync real-time with your app database.\n\n"
-            "👇 */help to know more*"
-        )
-
-    await callback_query.message.edit_text(
-        start_text,
-        reply_markup=keyboard
-    )        
+   

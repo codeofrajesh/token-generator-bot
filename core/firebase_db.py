@@ -26,6 +26,7 @@ def save_token_to_firebase(app_user_id: str, token: str, validity_minutes: int =
         logger.info(f"Successfully saved Firebase token for {app_user_id}")
         return True
     except Exception as e:
+        print(f"🔥 FIREBASE WRITE ERROR: {str(e)}")
         logger.error(f"Failed to save token to Firebase for {app_user_id}: {e}")
         return False
 

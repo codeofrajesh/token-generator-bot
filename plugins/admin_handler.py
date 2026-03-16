@@ -2,18 +2,19 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from config import Config
 import os
+import re
+from pyrogram.errors import BadRequest
+from core.database import db
+import asyncio
+import io
 
-# Helper filter to check if the user is an admin
-def is_admin(_, __, message: Message):
-    return message.from_user and message.from_user.id in Config.ADMIN_IDS
-
-admin_filter = filters.create(is_admin)
-
-# A dictionary to track what the admin is currently doing (e.g., waiting for an API key)
 admin_states = {}
 
-@Client.on_message(filters.command("admincmd") & filters.private & admin_filter)
+@Client.on_message(filters.command("admincmd") & filters.private)
 async def admin_panel(client: Client, message: Message):
+    is_coadmin = await db.is_coadmin(message.from_user.id)
+    if message.from_user.id not in Config.ADMIN_IDS and not is_coadmin:
+        return
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Add Shortener", callback_data="admin_add_shortener"),
@@ -23,7 +24,9 @@ async def admin_panel(client: Client, message: Message):
             InlineKeyboardButton("🔥 Update Firebase", callback_data="admin_update_firebase"),
             InlineKeyboardButton("⏱ Edit Bypass Time", callback_data="admin_edit_bypass")
         ],
-        [InlineKeyboardButton("❌ Close Panel", callback_data="admin_close")]
+        [   InlineKeyboardButton("📞 Edit Main URL", callback_data="admin_edit_main"),
+            InlineKeyboardButton("❌ Close Panel", callback_data="admin_close")
+        ]
     ])
     
     await message.reply_text(
@@ -32,10 +35,13 @@ async def admin_panel(client: Client, message: Message):
         reply_markup=keyboard
     )
 
-@Client.on_callback_query(filters.regex("^admin_") & admin_filter)
+@Client.on_callback_query(filters.regex("^admin_"))
 async def admin_callbacks(client: Client, query: CallbackQuery):
     data = query.data
     admin_id = query.from_user.id
+    is_coadmin = await db.is_coadmin(admin_id)
+    if admin_id not in Config.ADMIN_IDS and not is_coadmin:
+        return
     
     if data == "admin_close":
         await query.message.delete()
@@ -65,7 +71,8 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
         if not shorteners:
             await query.answer("No shorteners configured yet!", show_alert=True)
             return
-            
+
+
         buttons = []
         for s in shorteners:
             # We pass the MongoDB document _id in the callback data so we know exactly which one to delete
@@ -98,12 +105,22 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
             "Type `cancel` to abort."
         )
 
+    elif data == "admin_edit_main":
+        admin_states[admin_id] = {"action": "waiting_for_main_url"}
+        await query.message.edit_text(
+            "🔧 **Edit Main URL**\n\n"
+            "Please send me the new **Main URL** (e.g., `https://t.me/telegram`).\n\n"
+            "Type `cancel` to abort."
+        )
 
-@Client.on_message(filters.private & admin_filter & ~filters.command(["admincmd", "start"]))
+
+#State Function
+@Client.on_message(filters.private & filters.text & ~filters.regex("^/"))
 async def admin_state_machine(client: Client, message: Message):
     admin_id = message.from_user.id
-    
-    # If the admin isn't in the middle of a setup process, ignore the message
+    is_coadmin = await db.is_coadmin(admin_id)
+    if admin_id not in Config.ADMIN_IDS and not is_coadmin:
+        return
     if admin_id not in admin_states:
         return 
 
@@ -234,3 +251,172 @@ async def admin_state_machine(client: Client, message: Message):
             f"🔗 **API URL:** `{url}`\n\n"
             "It is now live in the database!"
         )
+    
+    # --- CONTACT URL LOGIC ---
+    elif action == "waiting_for_main_url":
+        url = message.text.strip()
+        if not re.match(r"^(https?://)?(t\.me|telegram\.me)/.+", url):
+            await message.reply_text("⚠️ Invalid format! Please enter a valid Telegram link (e.g., `https://t.me/YourGroup`).")
+            return
+        match = re.search(r"(?:t\.me|telegram\.me)/(?!joinchat/|\+)([\w_]+)(?:/)?$", url)
+        if match:
+            username = match.group(1)
+            try:
+                await client.get_chat(username)
+            except Exception as e:
+                await message.reply_text(
+                    f"❌ **Verification Failed!**\n"
+                    f"The username `@{username}` does not exist on Telegram, or the link is invalid.\n"
+                    f"*(System error: {str(e)})*"
+                )
+                return
+
+        await db.set_main_url(url)
+        del admin_states[admin_id]
+        await message.reply_text(f"✅ Main URL successfully updated to:\n`{url}`\n\nUse `/admincmd` to return to the panel.")
+
+# --- STATS COMMAND ---
+@Client.on_message(filters.command("stats") & filters.private)
+async def stats_command(client: Client, message: Message):
+    if message.from_user.id not in Config.ADMIN_IDS:
+        return
+        
+    loading = await message.reply_text("🔄 Fetching statistics...")
+    
+    total_users = await db.get_total_users()
+    active_shorteners = await db.get_all_shorteners()
+    
+    stats_text = (
+        "📊 **Bot Statistics**\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"👥 **Total Users:** `{total_users}`\n"
+        f"🔗 **Active Servers:** `{len(active_shorteners)}`\n"
+        "━━━━━━━━━━━━━━━━━━"
+    )
+    await loading.edit_text(stats_text)
+
+
+# --- BROADCAST COMMAND ---
+@Client.on_message(filters.command("broadcast") & filters.private)
+async def broadcast_command(client: Client, message: Message):
+    if message.from_user.id not in Config.ADMIN_IDS:
+        return
+        
+    # The admin must reply to the message they want to broadcast
+    if not message.reply_to_message:
+        await message.reply_text(
+            "⚠️ **How to use Broadcast:**\n\n"
+            "1. Send the photo/text/video you want to broadcast.\n"
+            "2. **Reply** to that message with `/broadcast`."
+        )
+        return
+
+    users = await db.get_all_users()
+    if not users:
+        await message.reply_text("⚠️ No users found in the database.")
+        return
+
+    status_msg = await message.reply_text(f"🚀 **Broadcast Started!**\nSending to {len(users)} users...")
+    
+    success = 0
+    failed = 0
+    
+    # Loop through all users and copy the message to them
+    for user in users:
+        try:
+            await message.reply_to_message.copy(user["_id"])
+            success += 1
+            # ⚠️ CRITICAL: Sleep for 0.05s to prevent Telegram from banning your bot for spamming!
+            await asyncio.sleep(0.05) 
+        except Exception:
+            # If it fails, it usually means the user blocked the bot or deleted their account
+            failed += 1
+            
+    await status_msg.edit_text(
+        "✅ **Broadcast Completed!**\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 **Successfully Sent:** `{success}`\n"
+        f"❌ **Failed (Blocked/Deleted):** `{failed}`"
+    )        
+
+
+# --- USER STATS TABLE COMMAND ---
+@Client.on_message(filters.command("userstats") & filters.private)
+async def userstats_command(client: Client, message: Message):
+    if message.from_user.id not in Config.ADMIN_IDS:
+        return
+        
+    status = await message.reply_text("🔄 Compiling user database...")
+    users = await db.get_all_users()
+    
+    if not users:
+        await status.edit_text("⚠️ No users found in the database yet.")
+        return
+
+    # 1. Build the Table Header
+    # We lock the widths: ID (10 chars), Name (12 chars), Username (12 chars)
+    table = "🆔 ID       | 👤 Name     | 🌐 Username  \n"
+    table += "━━━━━━━━━━━|━━━━━━━━━━━━━━|━━━━━━━━━━━━━━\n"
+    
+    # 2. Populate the Rows
+    for u in users:
+        uid = str(u["_id"])[:10].ljust(10)
+        # We use .get() so older users who only have an ID don't crash the bot
+        name = str(u.get("first_name", "Unknown"))[:12].ljust(12)
+        uname = str(u.get("username", "None"))[:12].ljust(12)
+        
+        table += f"{uid} | {name} | {uname}\n"
+
+    # 3. Smart Delivery (Message vs. File)
+    # Wrap the table in Telegram's Monospace Markdown
+    final_text = f"📊 **Detailed User Database ({len(users)} Users)**\n\n```text\n{table}```"
+    
+    if len(final_text) > 4000:
+        await status.edit_text("📦 Database is too large for a message. Generating file...")
+        
+        # Create a virtual file in memory
+        file_bytes = io.BytesIO(table.encode('utf-8'))
+        file_bytes.name = "Bot_User_Database.txt"
+        
+        await message.reply_document(
+            document=file_bytes,
+            caption=f"📊 **Complete User Database**\nTotal Users: `{len(users)}`"
+        )
+        await status.delete()
+    else:
+        await status.edit_text(final_text)  
+
+# --- CO-ADMIN MANAGEMENT COMMANDS (Main Admins Only) ---
+@Client.on_message(filters.command("add") & filters.private)
+async def add_coadmin_cmd(client: Client, message: Message):
+    # Strict Check: Only the absolute main admins from Config can use this
+    if message.from_user.id not in Config.ADMIN_IDS:
+        return
+        
+    if len(message.command) < 2:
+        await message.reply_text("⚠️ **Usage:** `/add UserID`\n*(e.g., `/add 123456789`)*")
+        return
+        
+    try:
+        target_id = int(message.command[1])
+        await db.add_coadmin(target_id)
+        await message.reply_text(f"✅ **Success:** User `{target_id}` has been granted Co-Admin access to the panel.")
+    except ValueError:
+        await message.reply_text("⚠️ User ID must be a valid number.")
+
+@Client.on_message(filters.command("remove") & filters.private)
+async def remove_coadmin_cmd(client: Client, message: Message):
+    # Strict Check: Only the absolute main admins from Config can use this
+    if message.from_user.id not in Config.ADMIN_IDS:
+        return
+        
+    if len(message.command) < 2:
+        await message.reply_text("⚠️ **Usage:** `/remove UserID`")
+        return
+        
+    try:
+        target_id = int(message.command[1])
+        await db.remove_coadmin(target_id)
+        await message.reply_text(f"❌ **Success:** User `{target_id}` has been removed from Co-Admins.")
+    except ValueError:
+        await message.reply_text("⚠️ User ID must be a valid number.")          
