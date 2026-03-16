@@ -67,7 +67,6 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
 
         elif data == "admin_remove_shortener":
             # Fetch active shorteners from MongoDB
-            from core.database import db
             shorteners = await db.get_all_shorteners()
             
             if not shorteners:
@@ -91,7 +90,6 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
             
         elif data.startswith("del_short_"):
             # The admin clicked a specific shortener to delete
-            from core.database import db
             short_id = data.split("del_short_")[1]
             
             await db.remove_shortener(short_id)
@@ -138,7 +136,6 @@ async def admin_state_machine(client: Client, message: Message):
         return
 
     action = state["action"]
-    from core.database import db
 
     # --- FIREBASE LOGIC ---
     if action == "waiting_for_firebase_json":
