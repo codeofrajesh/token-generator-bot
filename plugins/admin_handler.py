@@ -37,83 +37,87 @@ async def admin_panel(client: Client, message: Message):
 
 @Client.on_callback_query(filters.regex("^admin_"))
 async def admin_callbacks(client: Client, query: CallbackQuery):
-    print(f"🔘 ADMIN BUTTON CLICKED: {query.data} by User {query.from_user.id}")
-    data = query.data
-    admin_id = query.from_user.id
-    is_coadmin = await db.is_coadmin(admin_id)
-    if admin_id not in Config.ADMIN_IDS and not is_coadmin:
-        return
-    
-    if data == "admin_close":
-        await query.message.delete()
-        
-    elif data == "admin_add_shortener":
-        # We set the admin's state so the bot knows their next message is an API URL
-        admin_states[admin_id] = {"action": "waiting_for_shortener_url"}
-        await query.message.edit_text(
-            "**Add New Shortener**\n\n"
-            "Please send me the **API URL** of the shortener (e.g., `https://gplinks.in/api`).\n\n"
-            "Type `cancel` to abort."
-        )
-        
-    elif data == "admin_edit_bypass":
-        admin_states[admin_id] = {"action": "waiting_for_bypass_time"}
-        await query.message.edit_text(
-            "**Edit Bypass Time**\n\n"
-            "Enter the new minimum bypass time in **seconds** (e.g., `15`).\n\n"
-            "Type `cancel` to abort."
-        )
-
-    elif data == "admin_remove_shortener":
-        # Fetch active shorteners from MongoDB
-        from core.database import db
-        shorteners = await db.get_all_shorteners()
-        
-        if not shorteners:
-            await query.answer("No shorteners configured yet!", show_alert=True)
+    try:    
+        print(f"🔘 ADMIN BUTTON CLICKED: {query.data} by User {query.from_user.id}")
+        data = query.data
+        admin_id = query.from_user.id
+        is_coadmin = await db.is_coadmin(admin_id)
+        if admin_id not in Config.ADMIN_IDS and not is_coadmin:
             return
-
-
-        buttons = []
-        for s in shorteners:
-            # We pass the MongoDB document _id in the callback data so we know exactly which one to delete
-            short_id = str(s['_id'])
-            buttons.append([InlineKeyboardButton(f"🗑 {s['name']}", callback_data=f"del_short_{short_id}")])
+        
+        if data == "admin_close":
+            await query.message.delete()
             
-        buttons.append([InlineKeyboardButton("🔙 Cancel", callback_data="admin_close")])
-        
-        await query.message.edit_text(
-            "**Remove a Shortener**\n\n"
-            "Tap a shortener below to permanently delete it from the rotation:",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        
-    elif data.startswith("del_short_"):
-        # The admin clicked a specific shortener to delete
-        from core.database import db
-        short_id = data.split("del_short_")[1]
-        
-        await db.remove_shortener(short_id)
-        await query.answer("✅ Shortener removed successfully!", show_alert=True)
-        await query.message.edit_text("Shortener deleted. Send `/admincmd` to open the panel again.")
+        elif data == "admin_add_shortener":
+            # We set the admin's state so the bot knows their next message is an API URL
+            admin_states[admin_id] = {"action": "waiting_for_shortener_url"}
+            await query.message.edit_text(
+                "**Add New Shortener**\n\n"
+                "Please send me the **API URL** of the shortener (e.g., `https://gplinks.in/api`).\n\n"
+                "Type `cancel` to abort."
+            )
+            
+        elif data == "admin_edit_bypass":
+            admin_states[admin_id] = {"action": "waiting_for_bypass_time"}
+            await query.message.edit_text(
+                "**Edit Bypass Time**\n\n"
+                "Enter the new minimum bypass time in **seconds** (e.g., `15`).\n\n"
+                "Type `cancel` to abort."
+            )
 
-    elif data == "admin_update_firebase":
-        # Set the state so the bot expects a file next
-        admin_states[admin_id] = {"action": "waiting_for_firebase_json"}
-        await query.message.edit_text(
-            "🔥 **Update Firebase Credentials**\n\n"
-            "Step 1: Please send me the new `serviceAccountKey.json` file as a **Document**.\n\n"
-            "Type `cancel` to abort."
-        )
+        elif data == "admin_remove_shortener":
+            # Fetch active shorteners from MongoDB
+            from core.database import db
+            shorteners = await db.get_all_shorteners()
+            
+            if not shorteners:
+                await query.answer("No shorteners configured yet!", show_alert=True)
+                return
 
-    elif data == "admin_edit_main":
-        admin_states[admin_id] = {"action": "waiting_for_main_url"}
-        await query.message.edit_text(
-            "🔧 **Edit Main URL**\n\n"
-            "Please send me the new **Main URL** (e.g., `https://t.me/telegram`).\n\n"
-            "Type `cancel` to abort."
-        )
 
+            buttons = []
+            for s in shorteners:
+                # We pass the MongoDB document _id in the callback data so we know exactly which one to delete
+                short_id = str(s['_id'])
+                buttons.append([InlineKeyboardButton(f"🗑 {s['name']}", callback_data=f"del_short_{short_id}")])
+                
+            buttons.append([InlineKeyboardButton("🔙 Cancel", callback_data="admin_close")])
+            
+            await query.message.edit_text(
+                "**Remove a Shortener**\n\n"
+                "Tap a shortener below to permanently delete it from the rotation:",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+            
+        elif data.startswith("del_short_"):
+            # The admin clicked a specific shortener to delete
+            from core.database import db
+            short_id = data.split("del_short_")[1]
+            
+            await db.remove_shortener(short_id)
+            await query.answer("✅ Shortener removed successfully!", show_alert=True)
+            await query.message.edit_text("Shortener deleted. Send `/admincmd` to open the panel again.")
+
+        elif data == "admin_update_firebase":
+            # Set the state so the bot expects a file next
+            admin_states[admin_id] = {"action": "waiting_for_firebase_json"}
+            await query.message.edit_text(
+                "🔥 **Update Firebase Credentials**\n\n"
+                "Step 1: Please send me the new `serviceAccountKey.json` file as a **Document**.\n\n"
+                "Type `cancel` to abort."
+            )
+
+        elif data == "admin_edit_main":
+            admin_states[admin_id] = {"action": "waiting_for_main_url"}
+            await query.message.edit_text(
+                "🔧 **Edit Main URL**\n\n"
+                "Please send me the new **Main URL** (e.g., `https://t.me/telegram`).\n\n"
+                "Type `cancel` to abort."
+            )
+    except Exception as e:
+        # THE FIX: Force the bot to print the exact error to your Telegram screen
+        print(f"🔥 BUTTON CRASH: {str(e)}")
+        await query.answer(f"System Error: {str(e)}", show_alert=True)
 
 #State Function
 @Client.on_message(filters.private & filters.text & ~filters.regex("^/"))
