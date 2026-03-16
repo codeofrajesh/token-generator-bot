@@ -118,7 +118,7 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
         await query.answer(f"System Error: {str(e)}", show_alert=True)
 
 #State Function
-@Client.on_message(filters.private & filters.text & ~filters.regex("^/"))
+@Client.on_message(filters.private & (filters.text | filters.document) & ~filters.regex("^/"))
 async def admin_state_machine(client: Client, message: Message):
     admin_id = message.from_user.id
     is_coadmin = await db.is_coadmin(admin_id)
