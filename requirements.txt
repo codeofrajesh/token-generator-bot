@@ -3,5 +3,5 @@ tgcrypto
 firebase-admin
 python-dotenv
 requests
-motor==3.3.2
+motor>=3.4.0
 Flask
