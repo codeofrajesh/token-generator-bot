@@ -3,6 +3,7 @@ from pyrogram import Client
 from config import Config
 import firebase_admin
 from firebase_admin import credentials
+from keep_alive import keep_alive
 
 # Set up logging to monitor bot activity and errors
 logging.basicConfig(
@@ -36,3 +37,11 @@ if __name__ == "__main__":
     logger.info("Starting the Token Generator Bot...")
     initialize_firebase()
     app.run()
+
+if __name__ == "__main__":
+    # START THE FLASK SERVER FIRST
+    keep_alive()
+    
+    # THEN START THE BOT
+    print("Starting bot...")
+    app.run()    

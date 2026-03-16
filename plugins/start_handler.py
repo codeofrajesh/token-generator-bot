@@ -11,19 +11,33 @@ from core.shortener_api import get_short_link
 from core.firebase_db import save_token_to_firebase
 
 # Main /start command handler
+from core.database import db
+
+# Main /start command handler
 @Client.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
     args = message.command
     
+    # Fetch active shorteners from MongoDB
+    active_shorteners = await db.get_all_shorteners()
+    
     # --- 1. Main Menu (No deep-link arguments) ---
     if len(args) == 1:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Join Channel", url=Config.JOIN_CHANNEL_URL)], 
-            [
-                InlineKeyboardButton("How to use", callback_data="help_usage"),
-                InlineKeyboardButton("Generate Key", callback_data="demo_generate")
-            ]
-        ])
+        buttons = [[InlineKeyboardButton("Join Channel", url=Config.JOIN_CHANNEL_URL)]]
+        
+        # DYNAMICALLY ADD DEMO SERVER BUTTONS
+        server_row = []
+        for s in active_shorteners:
+            server_row.append(InlineKeyboardButton(f"🔑 {s['name']}", callback_data=f"demo_gen_{s['_id']}"))
+        
+        if server_row:
+            # Split into chunks of 2 buttons per row for a clean UI
+            buttons.extend([server_row[i:i+2] for i in range(0, len(server_row), 2)])
+        else:
+            buttons.append([InlineKeyboardButton("⚠️ No Servers Configured", callback_data="help_usage")])
+            
+        buttons.append([InlineKeyboardButton("How to use", callback_data="help_usage")])
+        
         start_text = (
             "✨ **Welcome to the Secure Token Generator!** ✨\n\n"
             "I am your automated bridge for secure, token-based authentication.\n\n"
@@ -33,11 +47,8 @@ async def start_command(client: Client, message: Message):
             "🔹 Sync real-time with your app database.\n\n"
             "👇 */help to know more*"
         )
-        
-        await message.reply_text(
-            start_text,
-            reply_markup=keyboard
-        )
+
+        await message.reply_text(start_text, reply_markup=InlineKeyboardMarkup(buttons))
         return
 
     payload = args[1]
@@ -45,27 +56,24 @@ async def start_command(client: Client, message: Message):
     # --- 2. App Workflow Initiation (/start app_User123) ---
     if payload.startswith("app_"):
         app_user_id = payload
-        verify_id = f"verify_{uuid.uuid4().hex}"
         
-        # Save state locally while they navigate the shortener
-        active_verifications[verify_id] = {
-            "telegram_user_id": message.from_user.id,
-            "start_time": time.time(),
-            "flow_type": "app",
-            "app_user_id": app_user_id
-        }
-        
-        # Generate the return link and shorten it
-        bot_username = (await client.get_me()).username
-        long_url = f"https://t.me/{bot_username}?start={verify_id}"
-        short_url = get_short_link(long_url)
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Verify to Continue", url=short_url)]
-        ])
+        buttons = []
+        server_row = []
+        # DYNAMICALLY ADD APP SERVER BUTTONS
+        for s in active_shorteners:
+            # We pass both the shortener ID and the app_user_id in the callback
+            server_row.append(InlineKeyboardButton(f"Verify via {s['name']}", callback_data=f"app_gen_{s['_id']}_{app_user_id}"))
+            
+        if server_row:
+            buttons.extend([server_row[i:i+2] for i in range(0, len(server_row), 2)])
+        else:
+            await message.reply_text("Admin hasn't configured any verification servers yet.")
+            return
+
         await message.reply_text(
-            "Please click the button below, complete the verification, and you will be redirected back here with your token.",
-            reply_markup=keyboard
+            "**Verification Required**\n\n"
+            "Please select a verification server below. Once completed, your token will be generated.",
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
         return
 
@@ -146,42 +154,62 @@ async def start_command(client: Client, message: Message):
 
 
 # --- 4. Callback Query Handler for the Inline Menu Buttons ---
-@Client.on_callback_query(filters.regex("^(help_usage|demo_generate)$"))
+@Client.on_callback_query(filters.regex("^(demo_gen_|app_gen_|help_usage|main_menu_return)"))
 async def callback_handler(client: Client, query: CallbackQuery):
     data = query.data
     
     if data == "help_usage":
-        # Shows a pop-up alert inside Telegram
-        await query.answer(
-            "Click 'Generate Key' to test the demo verification flow. For app users, the process starts automatically inside the app!", 
-            show_alert=True
-        )
+        await query.answer("Click any Server to test the demo verification flow!", show_alert=True)
+        return
         
-    elif data == "demo_generate":
+    # Handle dynamic link generation
+    if data.startswith("demo_gen_") or data.startswith("app_gen_"):
         await query.answer("Generating your secure link, please wait...", show_alert=False) 
         
+        # Parse the callback data
+        parts = data.split("_")
+        flow_type = "demo" if data.startswith("demo_gen_") else "app"
+        shortener_id = parts[2]
+        
+        # Fetch the specific shortener credentials from MongoDB
+        shorteners = await db.get_all_shorteners()
+        selected_server = next((s for s in shorteners if str(s["_id"]) == shortener_id), None)
+        
+        if not selected_server:
+            await query.message.edit_text("Error: This server is no longer available.")
+            return
+
         verify_id = f"verify_{uuid.uuid4().hex}"
-        active_verifications[verify_id] = {
+        
+        # Save state 
+        session_data = {
             "telegram_user_id": query.from_user.id,
             "start_time": time.time(),
-            "flow_type": "demo"
+            "flow_type": flow_type
         }
+        if flow_type == "app":
+            session_data["app_user_id"] = parts[3] # Get app_user_id from the callback
+            
+        active_verifications[verify_id] = session_data
         
         bot_username = (await client.get_me()).username
         long_url = f"https://t.me/{bot_username}?start={verify_id}"
         
-        short_url = get_short_link(long_url)
+        # Call the dynamically selected API
+        short_url = get_short_link(selected_server["api_url"], selected_server["api_key"], long_url)
+        
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Verify (Demo)", url=short_url)],
-            [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu_return")]
+            [InlineKeyboardButton(f"Go to {selected_server['name']}", url=short_url)],
+            [InlineKeyboardButton("🔙 Back to Servers", callback_data="main_menu_return")]
         ])
+        
         await query.message.edit_text(
-            "**Demo Mode Initiated**\n\n"
-            "⚠️ **IMPORTANT:** When you click the link below, if it opens inside Telegram, tap the **three dots (⋮)** in the top right corner and select **'Open in browser'** (like Chrome). Otherwise, it might get stuck at the end!\n\n"
-            "Click below to pass through the shortener. Once verified, return here for your token.",
+            f"**{selected_server['name']} Link Generated**\n\n"
+            "⚠️ **IMPORTANT:** When you click the link below, if it opens inside Telegram, tap the **three dots (⋮)** in the top right corner and select **'Open in browser'**.\n\n"
+            "Click below to pass through the shortener.",
             reply_markup=keyboard
         )
-        
+
 @Client.on_callback_query(filters.regex("^main_menu_return$"))
 async def return_to_main_menu(client: Client, callback_query):
     # This recreates the main menu from your start_handler
@@ -194,8 +222,17 @@ async def return_to_main_menu(client: Client, callback_query):
             InlineKeyboardButton("Generate Key", callback_data="demo_generate")
         ]
     ])
-    
+    start_text = (
+            "✨ **Welcome to the Secure Token Generator!** ✨\n\n"
+            "I am your automated bridge for secure, token-based authentication.\n\n"
+            "**What I do:**\n"
+            "🔹 Generate cryptographic access tokens.\n"
+            "🔹 Protect links with anti-bypass timers.\n"
+            "🔹 Sync real-time with your app database.\n\n"
+            "👇 */help to know more*"
+        )
+
     await callback_query.message.edit_text(
-        "Welcome back to the Token Generator Bot!\n\nPlease select an option below:",
+        start_text,
         reply_markup=keyboard
     )        

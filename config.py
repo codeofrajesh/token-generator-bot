@@ -11,8 +11,8 @@ class Config:
     BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
     MONGO_URI = os.environ.get("MONGO_URI", "")
     ADMIN_IDS = set(map(int, os.environ.get("ADMIN_IDS", "").split(",")))
-    SHORTENER_API_URL = os.environ.get("SHORTENER_API_URL", "https://example-shortener.com/api")
-    SHORTENER_API_KEY = os.environ.get("SHORTENER_API_KEY", "")
+    #SHORTENER_API_URL = os.environ.get("SHORTENER_API_URL", "https://example-shortener.com/api")
+    #SHORTENER_API_KEY = os.environ.get("SHORTENER_API_KEY", "")
 
     # Firebase Configuration
     FIREBASE_KEY_PATH = os.environ.get("FIREBASE_KEY_PATH", "serviceAccountKey.json")

@@ -99,7 +99,7 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
         )
 
 
-@Client.on_message(filters.private & admin_filter & ~filters.command("admincmd"))
+@Client.on_message(filters.private & admin_filter & ~filters.command(["admincmd", "start"]))
 async def admin_state_machine(client: Client, message: Message):
     admin_id = message.from_user.id
     
@@ -129,8 +129,8 @@ async def admin_state_machine(client: Client, message: Message):
         if os.path.exists(file_path):
             os.remove(file_path) 
         
-        # Download the new key directly into the bot's root folder
-        await message.download(file_name=file_path)
+        abs_path = os.path.abspath(file_path)
+        await message.download(file_name=abs_path)
         
         # Move to the next state
         admin_states[admin_id]["action"] = "waiting_for_firebase_url"
@@ -146,16 +146,25 @@ async def admin_state_machine(client: Client, message: Message):
             # Save the new URL to MongoDB
             await db.settings.update_one({"_id": "config"}, {"$set": {"firebase_url": new_url}}, upsert=True)
             
-            await message.reply_text(
-                f"✅ Firebase URL updated to:\n`{new_url}`\n\n"
-                "**⚠️ IMPORTANT:** Because Firebase initializes on startup, you must **restart the bot script** (`Ctrl+C` then `python main.py`) for the new database connection to take effect."
-            )
+            # --- THE MAGIC FIX: Reload Firebase instantly ---
+            from core.firebase_db import reload_firebase
+            success, error_msg = reload_firebase(new_url)
+            
+            if success:
+                await message.reply_text(
+                    f"✅ Firebase URL updated to:\n`{new_url}`\n\n"
+                    "🔥 **Firebase re-initialized successfully!** The bot is now using the new database."
+                )
+            else:
+                await message.reply_text(
+                    f"⚠️ The URL was saved, but Firebase failed to reload dynamically. You may need to restart. Error: `{error_msg}`"
+                )
         else:
             await message.reply_text("✅ Firebase URL skipped.")
-        
+            
         # Clear the admin state
         del admin_states[admin_id]
-        await message.reply_text("🔥 Firebase setup complete! Use `/admincmd` to return to the panel.")
+        await message.reply_text("🔥 Firebase setup complete! Use /admincmd to return to the panel.")
         
     # --- BYPASS TIME LOGIC ---
     elif action == "waiting_for_bypass_time":
