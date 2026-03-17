@@ -1,6 +1,7 @@
 # Security
 .env
 serviceAccountKey.json
+serviceAccountKeyhhhh.json
 
 # Python caches
 __pycache__/
