@@ -1,3 +1,4 @@
+import logging
 import time
 import uuid
 from pyrogram import Client, filters
@@ -51,16 +52,16 @@ async def start_command(client: Client, message: Message):
 
     payload = args[1]
 
-    # --- 2. App Workflow Initiation (/start app_User123) ---
+    # --- 2. App Workflow Initiation (/start app_appname) ---
     if payload.startswith("app_"):
-        app_user_id = payload
+        appname = payload.split("app_")[1]
         
         buttons = []
         server_row = []
         # DYNAMICALLY ADD APP SERVER BUTTONS
         for s in active_shorteners:
-            # We pass both the shortener ID and the app_user_id in the callback
-            server_row.append(InlineKeyboardButton(f" 🔑{s['name']}", callback_data=f"app_gen_{s['_id']}_{app_user_id}"))
+            # We pass both the shortener ID and the appname in the callback
+            server_row.append(InlineKeyboardButton(f" 🔑{s['name']}", callback_data=f"app_gen_{s['_id']}_{appname}"))
             
         if server_row:
             buttons.extend([server_row[i:i+2] for i in range(0, len(server_row), 2)])
@@ -104,7 +105,11 @@ async def start_command(client: Client, message: Message):
         # Route the success logic based on the flow_type
         if session_data["flow_type"] == "app":
             # Save to Firebase
-            success = save_token_to_firebase(session_data["app_user_id"], token)
+            success = save_token_to_firebase(
+                session_data["appname"], 
+                session_data["telegram_user_id"], 
+                token
+            )
             if success:
                 app_success_text = (
                     "🎉 **VERIFICATION SUCCESSFUL** 🎉\n"
@@ -145,6 +150,7 @@ async def start_command(client: Client, message: Message):
                 )
                 await message.reply_text(demo_success_text)
             except Exception as e:
+                logging.error(f"🔥 LOG CHANNEL CRASH: {str(e)}", exc_info=True)
                 await message.reply_text(f"Verification passed! Token: `{token}`\n*(Failed to log to channel. Ensure the bot is an admin there).*")
                 
         # Cleanup the temporary session state
@@ -236,7 +242,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
             "flow_type": flow_type
         }
         if flow_type == "app":
-            session_data["app_user_id"] = parts[3] # Get app_user_id from the callback
+            session_data["appname"] = parts[3] # Get appname from the callback
             
         active_verifications[verify_id] = session_data
         
