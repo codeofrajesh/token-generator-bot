@@ -18,7 +18,7 @@ def save_token_to_firebase(appname: str, telegram_user_id: int, token: str):
          
         ref.child(token).set({
             "appname": appname,
-            "user_id": telegram_user_id
+            "user_id": telegram_user_id,
             "created_at": created_at,
             "expires_at": expires_at
         })
