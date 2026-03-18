@@ -12,13 +12,13 @@ def save_token_to_firebase(appname: str, telegram_user_id: int, token: str):
     """
     try:
         
-        firebase_key = f"App_{appname}_{telegram_user_id}"
         created_at = int(time.time())
         expires_at = created_at + 600
         ref = db.reference('tokens')
          
-        ref.child(firebase_key).set({
-            "token": token,
+        ref.child(token).set({
+            "appname": appname,
+            "user_id": telegram_user_id
             "created_at": created_at,
             "expires_at": expires_at
         })
