@@ -5,6 +5,7 @@ import os
 import re
 from pyrogram.errors import BadRequest
 from core.database import db
+from core.firebase_db import db as fdb
 import asyncio
 import io
 
@@ -405,6 +406,51 @@ async def add_coadmin_cmd(client: Client, message: Message):
         await message.reply_text(f"✅ **Success:** User `{target_id}` has been granted Co-Admin access to the panel.")
     except ValueError:
         await message.reply_text("⚠️ User ID must be a valid number.")
+
+# --- CLEAR USED TOKENS COMMAND ---
+@Client.on_message(filters.command("delete") & filters.private)
+async def delete_used_tokens(client: Client, message: Message):
+    admin_id = message.from_user.id
+    
+    # Check if the user is a main admin or co-admin
+    is_coadmin = await db.is_coadmin(admin_id)
+    if admin_id not in Config.ADMIN_IDS and not is_coadmin:
+        return
+        
+    status_msg = await message.reply_text("🔄 Scanning Firebase for used tokens...")
+    
+    try:
+        # Connect to the 'tokens' node in Firebase
+        ref = fdb.reference('tokens')
+        all_tokens = ref.get()
+        
+        # If the database is completely empty
+        if not all_tokens:
+            await status_msg.edit_text("⚠️ Database is empty. No tokens found.")
+            return
+
+        deleted_count = 0
+        updates = {} # We will store all the tokens we want to delete here
+        
+        # Loop through all tokens
+        for firebase_key, token_data in all_tokens.items():
+            # Check if it's a valid dictionary and if read == 1
+            if isinstance(token_data, dict) and token_data.get("read") == 1:
+                # Setting a key's value to None in Firebase permanently deletes it
+                updates[firebase_key] = None 
+                deleted_count += 1
+                
+        # Execute the deletion
+        if deleted_count > 0:
+            # ref.update() performs a batch execution (deletes all of them instantly in one go)
+            ref.update(updates)
+            await status_msg.edit_text(f"✅ Found **{deleted_count}** used tokens and cleared them from the database.")
+        else:
+            await status_msg.edit_text("✅ Scanned database. No used tokens (`read = 1`) found right now.")
+            
+    except Exception as e:
+        print(f"🔥 FIREBASE DELETE CRASH: {str(e)}")
+        await status_msg.edit_text(f"❌ **Error while clearing tokens:** `{str(e)}`")
 
 @Client.on_message(filters.command("remove") & filters.private)
 async def remove_coadmin_cmd(client: Client, message: Message):

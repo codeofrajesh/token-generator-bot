@@ -20,7 +20,8 @@ def save_token_to_firebase(appname: str, telegram_user_id: int, token: str):
         ref.child(firebase_key).set({
             "token": token,
             "created_at": created_at,
-            "expires_at": expires_at
+            "expires_at": expires_at,
+            "read": 0
         })
         logger.info(f"Successfully saved Firebase token for {appname}_{telegram_user_id}")
         return True
