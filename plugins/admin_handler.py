@@ -26,6 +26,9 @@ async def admin_panel(client: Client, message: Message):
             InlineKeyboardButton("⏱ Edit Bypass Time", callback_data="admin_edit_bypass")
         ],
         [   InlineKeyboardButton("📞 Edit Main URL", callback_data="admin_edit_main"),
+            InlineKeyboardButton("📖 Edit How To Use", callback_data="admin_edit_howtouse")
+        ],
+        [
             InlineKeyboardButton("❌ Close Panel", callback_data="admin_close")
         ]
     ])
@@ -113,6 +116,16 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
                 "Please send me the new **Main URL** (e.g., `https://t.me/telegram`).\n\n"
                 "Type `cancel` to abort."
             )
+
+        elif data == "admin_edit_howtouse":
+            admin_states[admin_id] = {"action": "waiting_for_how_to_use_url"}
+            await query.message.edit_text(
+                "📖 **Edit 'How To USE' Link**\n\n"
+                "Please send me the URL (Telegram Post, YouTube video, etc.) that explains how to use the bot.\n\n"
+                "⚠️ **Must start with `http://` or `https://`**\n\n"
+                "Type `cancel` to abort."
+            )
+
     except Exception as e:
         # THE FIX: Force the bot to print the exact error to your Telegram screen
         print(f"🔥 BUTTON CRASH: {str(e)}")
@@ -277,6 +290,26 @@ async def admin_state_machine(client: Client, message: Message):
         await db.set_main_url(url)
         del admin_states[admin_id]
         await message.reply_text(f"✅ Main URL successfully updated to:\n`{url}`\n\nUse `/admincmd` to return to the panel.")
+
+    elif action == "waiting_for_how_to_use_url":
+        if not message.text:
+            await message.reply_text("⚠️ Please send a valid link text, not a file or photo.")
+            return
+            
+        url = message.text.strip()
+        
+        # LOGICAL ERROR CHECK: Prevent bot crash by enforcing HTTP
+        if not re.match(r"^(https?://)", url):
+            await message.reply_text(
+                "❌ **Invalid Link!**\n"
+                "The link MUST start with `http://` or `https://` or the bot's inline buttons will crash for users.\n\n"
+                "Please try again."
+            )
+            return
+            
+        await db.set_how_to_use_url(url)
+        del admin_states[admin_id]
+        await message.reply_text(f"✅ 'How to USE' link successfully updated to:\n`{url}`\n\nUsers will now be directed here from the main menu.")    
 
 # --- STATS COMMAND ---
 @Client.on_message(filters.command("stats") & filters.private)

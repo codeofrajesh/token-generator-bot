@@ -26,19 +26,21 @@ async def start_command(client: Client, message: Message):
     # --- 1. Main Menu (No deep-link arguments) ---
     if len(args) == 1:
         main_url = await db.get_main_url()
+        how_to_use_url = await db.get_how_to_use_url()
         dev_url = Config.DEVELOPER_URL
-        
+        if not how_to_use_url or not how_to_use_url.startswith("http"):
+            how_to_use_url = "https://t.me/telegram"
         buttons = [
-            [InlineKeyboardButton("📢 TOKEN Channel", url=Config.JOIN_CHANNEL_URL)],
+            [InlineKeyboardButton("📖 How to USE", url=how_to_use_url)],
             [
-                InlineKeyboardButton("🔑 Generate Key", callback_data="show_demo_servers"),
+                InlineKeyboardButton("🔑 Generate TOKEN", url="https://t.me/gentokenRJbot?start=app_studyingredients"),
                 InlineKeyboardButton("👨‍💻 Developer", url=dev_url)
             ],
             [InlineKeyboardButton("💬 Main group", url=main_url)]
         ]
         
         start_text = (
-            "✨ **Welcome to the Secure Token Generator!** ✨\n\n"
+            "✨ **Welcome to the Study Ingredients Token Generator!** ✨\n\n"
             "I am your automated bridge for secure, token-based authentication.\n\n"
             "**What I do:**\n"
             "🔹 Generate cryptographic access tokens.\n"
@@ -114,7 +116,7 @@ async def start_command(client: Client, message: Message):
                 app_success_text = (
                     "🎉 **VERIFICATION SUCCESSFUL** 🎉\n"
                     "━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "Your secure session has been verified, and your one-time access token is ready.\n\n"
+                    "Your secure STUDY INGREDIENTS session has been verified, and your one-time access token is ready.\n\n"
                     "🔑 **Your Access Token:**\n"
                     f"👉 `{token}` 👈\n"
                     "*(Tap the token above to copy it instantly)*\n\n"

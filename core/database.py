@@ -82,5 +82,17 @@ class Database:
         """Revokes co-admin privileges."""
         await self.db.coadmins.delete_one({"_id": user_id})
 
+    async def get_how_to_use_url(self):
+        data = await self.settings.find_one({"_id": "config"})
+        # Fallback to Telegram home if admin hasn't set it yet to prevent crashes
+        return data.get("how_to_use_url", "https://t.me/telegram")
+
+    async def set_how_to_use_url(self, url: str):
+        await self.settings.update_one(
+            {"_id": "config"}, 
+            {"$set": {"how_to_use_url": url}}, 
+            upsert=True
+        )    
+
 # Initialize the database object to be imported elsewhere
 db = Database()
