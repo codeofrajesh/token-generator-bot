@@ -3,6 +3,7 @@ import time
 import uuid
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.enums import ParseMode
 from config import Config
 
 from config import Config
@@ -31,6 +32,7 @@ async def start_command(client: Client, message: Message):
         dev_url = Config.DEVELOPER_URL
         if not how_to_use_url or not how_to_use_url.startswith("http"):
             how_to_use_url = "https://t.me/telegram"
+        
         buttons = [
             [InlineKeyboardButton("📖 How to USE", url=how_to_use_url)],
             [
@@ -40,17 +42,38 @@ async def start_command(client: Client, message: Message):
             [InlineKeyboardButton("💬 Main group", url=main_url)]
         ]
         
-        start_text = (
-            "✨ **Welcome to the Study Ingredients Token Generator!** ✨\n\n"
-            "I am your automated bridge for secure, token-based authentication.\n\n"
-            "**What I do:**\n"
-            "🔹 Generate cryptographic access tokens.\n"
-            "🔹 Protect links with anti-bypass timers.\n"
-            "🔹 Sync real-time with your app database.\n\n"
-            "👇 */help to know more*"
-        )
+        # 1. Fetch custom welcome message and image from MongoDB
+        welcome_config = await db.settings.find_one({"_id": "welcome_settings"})
+        
+        if welcome_config and welcome_config.get("text"):
+            # Load the custom admin message
+            start_text = welcome_config.get("text")
+            image_id = welcome_config.get("image_id")
+        else:
+            # Fallback default text if the admin hasn't set anything yet
+            # Notice we use HTML tags (<b>, <i>) instead of Markdown (** *) for the fallback!
+            start_text = (
+                "✨ <b>Welcome to the Study Ingredients Token Generator!</b> ✨\n\n"
+                "I am your automated bridge for secure, token-based authentication.\n\n"
+                "👇 <i>/help to know more</i>"
+            )
+            image_id = None
 
-        await message.reply_text(start_text, reply_markup=InlineKeyboardMarkup(buttons))
+        # 2. Check if there's an image, and send the correct response format
+        if image_id:
+            await message.reply_photo(
+                photo=image_id,
+                caption=start_text,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await message.reply_text(
+                text=start_text,
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                parse_mode=ParseMode.HTML
+            )
         return
 
     payload = args[1]

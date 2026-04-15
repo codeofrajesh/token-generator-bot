@@ -94,5 +94,21 @@ class Database:
             upsert=True
         )    
 
+    async def get_welcome_config():
+        """Fetches the welcome text and image ID from the database."""
+        config = await db.bot_config.find_one({"_id": "welcome_settings"})
+        if config:
+            return config.get("text"), config.get("image_id")
+        # Default fallback if admin hasn't set anything yet
+        return "👋 Welcome to the Bot!", None
+
+    async def set_welcome_config(text, image_id):
+        """Saves the custom welcome text and image ID."""
+        await db.bot_config.update_one(
+            {"_id": "welcome_settings"}, 
+            {"$set": {"text": text, "image_id": image_id}}, 
+            upsert=True
+        )    
+
 # Initialize the database object to be imported elsewhere
 db = Database()

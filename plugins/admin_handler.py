@@ -25,6 +25,9 @@ async def admin_panel(client: Client, message: Message):
             InlineKeyboardButton("🔥 Update Firebase", callback_data="admin_update_firebase"),
             InlineKeyboardButton("⏱ Edit Bypass Time", callback_data="admin_edit_bypass")
         ],
+        [
+            InlineKeyboardButton("🖼 Edit Welcome Msg", callback_data="admin_edit_welcome")
+        ],
         [   InlineKeyboardButton("📞 Edit Main URL", callback_data="admin_edit_main"),
             InlineKeyboardButton("📖 Edit How To Use", callback_data="admin_edit_howtouse")
         ],
@@ -126,13 +129,24 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
                 "Type `cancel` to abort."
             )
 
+        elif data == "admin_edit_welcome":
+            # Set the state so the bot knows the next message is the welcome content
+            admin_states[admin_id] = {"action": "waiting_for_welcome"}
+            await query.message.edit_text(
+                "🖼 **Edit Welcome Message**\n\n"
+                "Please send me the new welcome message.\n\n"
+                "• **For Text Only:** Just type your new message and send it.\n"
+                "• **For Image + Text:** Send a photo and write your welcome message in the **caption** before sending.\n\n"
+                "*(Type `cancel` to abort)*"
+            )    
+
     except Exception as e:
         # THE FIX: Force the bot to print the exact error to your Telegram screen
         print(f"🔥 BUTTON CRASH: {str(e)}")
         await query.answer(f"System Error: {str(e)}", show_alert=True)
 
 #State Function
-@Client.on_message(filters.private & (filters.text | filters.document) & ~filters.regex("^/"))
+@Client.on_message(filters.private & (filters.text | filters.document | filters.photo) & ~filters.regex("^/"))
 async def admin_state_machine(client: Client, message: Message):
     admin_id = message.from_user.id
     is_coadmin = await db.is_coadmin(admin_id)
@@ -310,6 +324,35 @@ async def admin_state_machine(client: Client, message: Message):
         await db.set_how_to_use_url(url)
         del admin_states[admin_id]
         await message.reply_text(f"✅ 'How to USE' link successfully updated to:\n`{url}`\n\nUsers will now be directed here from the main menu.")    
+
+    # --- WELCOME MESSAGE LOGIC ---
+    elif action == "waiting_for_welcome":
+        image_id = None
+        welcome_text = ""
+
+        # PRESERVATION LOGIC: Extract raw HTML with all nested tags intact
+        if message.photo:
+            image_id = message.photo.file_id
+            # .html is the magic Pyrogram property that preserves bold/italic/underline/blockquote
+            welcome_text = message.caption.html if message.caption else "Welcome!"
+            
+        elif message.text:
+            welcome_text = message.text.html
+            
+        else:
+            await message.reply_text("⚠️ Please send either text or a photo with a caption.")
+            return
+
+        # Save directly to your MongoDB 'settings' collection
+        await db.settings.update_one(
+            {"_id": "welcome_settings"}, 
+            {"$set": {"text": welcome_text, "image_id": image_id}}, 
+            upsert=True
+        )
+        
+        # Clear the admin state
+        del admin_states[admin_id]
+        await message.reply_text("✅ **Welcome message saved with full HTML formatting!**\nTest it by sending /start")
 
 # --- STATS COMMAND ---
 @Client.on_message(filters.command("stats") & filters.private)
