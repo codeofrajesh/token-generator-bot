@@ -1,10 +1,13 @@
 # Security
 .env
-serviceAccountKey.json
-serviceAccountKeyhhhh.json
 
 # Python caches
 __pycache__/
 *.pyc
 venv/
 env/
+
+*.session
+*.session-journal
+downloads/
+*.json

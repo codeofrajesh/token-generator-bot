@@ -9,7 +9,8 @@ from config import Config
 from core.state import active_verifications
 from core.security import generate_secure_token, verify_time_gap, is_expired
 from core.shortener_api import get_short_link
-from core.firebase_db import save_token_to_firebase
+#from core.firebase_db import save_token_to_firebase
+from core.firebase_db import claim_pregenerated_token
 from core.database import db
 
 # Main /start command handler
@@ -100,34 +101,62 @@ async def start_command(client: Client, message: Message):
             del active_verifications[verify_id]
             await message.reply_text("Bypass detected! You completed the link suspiciously fast. Verification failed.")
             return
-            
-        # Checks passed! Generate the 16-digit cryptographic Token
-        token = generate_secure_token(16)
-        
-        # Route the success logic based on the flow_type
+
+
         if session_data["flow_type"] == "app":
-            # Save to Firebase
-            success = save_token_to_firebase(
-                session_data["appname"], 
-                session_data["telegram_user_id"], 
-                token
-            )
-            if success:
+            
+            # Fetch the token instead of generating one
+            token, error_msg = claim_pregenerated_token(session_data["telegram_user_id"])
+            
+            if token:
                 app_success_text = (
                     "🎉 **VERIFICATION SUCCESSFUL** 🎉\n"
                     "━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "Your secure STUDY INGREDIENTS session has been verified, and your one-time access token is ready.\n\n"
+                    "Your secure session has been verified, and your one-time access token is ready.\n\n"
                     "🔑 **Your Access Token:**\n"
                     f"👉 `{token}` 👈\n"
                     "*(Tap the token above to copy it instantly)*\n\n"
-                    "⏱ **Status:** Active & Synced\n"
+                    "⏱ **Status:** Active & Assigned\n"
                     "🛡 **Security:** One-Time Use Only\n\n"
                     "📱 *You may now return to the app, paste this token, and click Verify!*"
                 )
                 await message.reply_text(app_success_text)
             else:
-                await message.reply_text("⚠️ **Verification passed**, but we failed to sync with the database. Please try again.")
-
+                # Critical UX: Tell the user if the admin hasn't generated enough tokens
+                await message.reply_text(
+                    f"⚠️ **Verification passed, but our database is empty!**\n\n"
+                    f"There are no tokens left to dispense. Please contact the administrator.\n"
+                    f"*(System error: {error_msg})*"
+                )
+        
+        # --- COMMENTED CODE FOR FUTURE REFERENCE ---
+        # Checks passed! Generate the 16-digit cryptographic Token
+        # token = generate_secure_token(16)
+        # 
+        # # Route the success logic based on the flow_type
+        # if session_data["flow_type"] == "app":
+        #     # Save to Firebase
+        #     success = save_token_to_firebase(
+        #         session_data["appname"], 
+        #         session_data["telegram_user_id"], 
+        #         token
+        #     )
+        #     if success:
+        #         app_success_text = (
+        #             "🎉 **VERIFICATION SUCCESSFUL** 🎉\n"
+        #             "━━━━━━━━━━━━━━━━━━━━━━\n"
+        #             "Your secure STUDY INGREDIENTS session has been verified, and your one-time access token is ready.\n\n"
+        #             "🔑 **Your Access Token:**\n"
+        #             f"👉 `{token}` 👈\n"
+        #             "*(Tap the token above to copy it instantly)*\n\n"
+        #             "⏱ **Status:** Active & Synced\n"
+        #             "🛡 **Security:** One-Time Use Only\n\n"
+        #             "📱 *You may now return to the app, paste this token, and click Verify!*"
+        #         )
+        #         await message.reply_text(app_success_text)
+        #     else:
+        #         await message.reply_text("⚠️ **Verification passed**, but we failed to sync with the database. Please try again.")
+        
         elif session_data["flow_type"] == "demo":
             # Send to Telegram Log Channel
             log_text = (

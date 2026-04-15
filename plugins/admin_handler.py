@@ -5,7 +5,7 @@ import os
 import re
 from pyrogram.errors import BadRequest
 from core.database import db
-from core.firebase_db import db as fdb
+from core.firebase_db import fdb
 import asyncio
 import io
 
