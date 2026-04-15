@@ -33,7 +33,8 @@ class Database:
         
     async def remove_shortener(self, shortener_id: str):
         from bson.objectid import ObjectId
-        await self.shorteners.delete_one({"_id": ObjectId(shortener_id)})
+        result = await self.shorteners.delete_one({"_id": ObjectId(shortener_id)})
+        return result.deleted_count > 0
 
     async def get_main_url(self):
         data = await self.settings.find_one({"_id": "config"})

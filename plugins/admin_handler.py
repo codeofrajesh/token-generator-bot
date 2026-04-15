@@ -85,7 +85,7 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
             for s in shorteners:
                 # We pass the MongoDB document _id in the callback data so we know exactly which one to delete
                 short_id = str(s['_id'])
-                buttons.append([InlineKeyboardButton(f"🗑 {s['name']}", callback_data=f"del_short_{short_id}")])
+                buttons.append([InlineKeyboardButton(f"🗑 {s['name']}", callback_data=f"admin_del_short_{short_id}")])
                 
             buttons.append([InlineKeyboardButton("🔙 Cancel", callback_data="admin_close")])
             
@@ -95,14 +95,44 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
             
-        elif data.startswith("del_short_"):
-            # The admin clicked a specific shortener to delete
-            short_id = data.split("del_short_")[1]
+        elif data.startswith("admin_del_short_"):
+            # 1. Extract ID and Delete
+            short_id = data.split("admin_del_short_")[1]
+            success = await db.remove_shortener(short_id)
             
-            await db.remove_shortener(short_id)
-            await query.answer("✅ Shortener removed successfully!", show_alert=True)
-            await query.message.edit_text("Shortener deleted. Send `/admincmd` to open the panel again.")
-
+            if success:
+                # Show a quick toast notification at the top of the screen (not a blocking alert)
+                await query.answer("✅ Shortener removed!", show_alert=False)
+                
+                # 2. Re-fetch the UPDATED list of shorteners from the database
+                shorteners = await db.get_all_shorteners()
+                
+                # 3. Rebuild the keyboard dynamically
+                if not shorteners:
+                    # If that was the very last shortener, tell them the list is empty
+                    await query.message.edit_text(
+                        "**Remove a Shortener**\n\n"
+                        "✅ All shorteners have been deleted. The rotation is currently empty.",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Panel", callback_data="admin_close")]])
+                    )
+                else:
+                    # If there are still shorteners left, rebuild the buttons without the deleted one
+                    buttons = []
+                    for s in shorteners:
+                        s_id = str(s['_id'])
+                        buttons.append([InlineKeyboardButton(f"🗑 {s['name']}", callback_data=f"admin_del_short_{s_id}")])
+                        
+                    buttons.append([InlineKeyboardButton("🔙 Cancel", callback_data="admin_close")])
+                    
+                    # 4. Update the message with the new keyboard smoothly
+                    await query.message.edit_text(
+                        "**Remove a Shortener**\n\n"
+                        "Tap a shortener below to permanently delete it from the rotation:",
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+            else:
+                await query.answer("❌ Failed to delete shortener. Check logs.", show_alert=True)
+                
         elif data == "admin_update_firebase":
             # Set the state so the bot expects a file next
             admin_states[admin_id] = {"action": "waiting_for_firebase_json"}
