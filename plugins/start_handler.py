@@ -4,6 +4,8 @@ import uuid
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.enums import ParseMode
+from pyrogram.types import MessageEntity
+from pyrogram.enums import MessageEntityType
 from config import Config
 
 from config import Config
@@ -32,7 +34,7 @@ async def start_command(client: Client, message: Message):
         dev_url = Config.DEVELOPER_URL
         if not how_to_use_url or not how_to_use_url.startswith("http"):
             how_to_use_url = "https://t.me/telegram"
-        
+            
         buttons = [
             [InlineKeyboardButton("📖 How to USE", url=how_to_use_url)],
             [
@@ -42,37 +44,58 @@ async def start_command(client: Client, message: Message):
             [InlineKeyboardButton("💬 Main group", url=main_url)]
         ]
         
-        # 1. Fetch custom welcome message and image from MongoDB
+        # 1. Fetch custom config from MongoDB
         welcome_config = await db.settings.find_one({"_id": "welcome_settings"})
         
         if welcome_config and welcome_config.get("text"):
-            # Load the custom admin message
             start_text = welcome_config.get("text")
             image_id = welcome_config.get("image_id")
+            saved_entities = welcome_config.get("entities", [])
+            
+            # DESERIALIZATION: Rebuild the MongoDB dict back into Pyrogram Entity objects
+            reply_entities = []
+            for e in saved_entities:
+                try:
+                    reply_entities.append(
+                        MessageEntity(
+                            type=MessageEntityType[e["type"]],
+                            offset=e["offset"],
+                            length=e["length"],
+                            url=e.get("url"),
+                            custom_emoji_id=e.get("custom_emoji_id")
+                        )
+                    )
+                except Exception:
+                    continue # Skip safely if something goes wrong
+                    
+            # Send using NATIVE ENTITIES instead of HTML
+            if image_id:
+                await message.reply_photo(
+                    photo=image_id,
+                    caption=start_text,
+                    caption_entities=reply_entities,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            else:
+                await message.reply_text(
+                    text=start_text,
+                    entities=reply_entities,
+                    disable_web_page_preview=True,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                
         else:
-            # Fallback default text if the admin hasn't set anything yet
-            # Notice we use HTML tags (<b>, <i>) instead of Markdown (** *) for the fallback!
+            # Fallback default text (Only uses HTML if no custom message is saved)
             start_text = (
                 "✨ <b>Welcome to the Study Ingredients Token Generator!</b> ✨\n\n"
                 "I am your automated bridge for secure, token-based authentication.\n\n"
                 "👇 <i>/help to know more</i>"
             )
-            image_id = None
-
-        # 2. Check if there's an image, and send the correct response format
-        if image_id:
-            await message.reply_photo(
-                photo=image_id,
-                caption=start_text,
-                reply_markup=InlineKeyboardMarkup(buttons),
-                parse_mode=ParseMode.HTML
-            )
-        else:
             await message.reply_text(
                 text=start_text,
+                parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
-                reply_markup=InlineKeyboardMarkup(buttons),
-                parse_mode=ParseMode.HTML
+                reply_markup=InlineKeyboardMarkup(buttons)
             )
         return
 
@@ -127,30 +150,64 @@ async def start_command(client: Client, message: Message):
 
 
         if session_data["flow_type"] == "app":
-            
-            # Fetch the token instead of generating one
-            token, error_msg = claim_pregenerated_token(session_data["telegram_user_id"])
-            
-            if token:
-                app_success_text = (
-                    "🎉 **VERIFICATION SUCCESSFUL** 🎉\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "Your secure session has been verified, and your one-time access token is ready.\n\n"
-                    "🔑 **Your Access Token:**\n"
-                    f"👉 `{token}` 👈\n"
-                    "*(Tap the token above to copy it instantly)*\n\n"
-                    "⏱ **Status:** Active & Assigned\n"
-                    "🛡 **Security:** One-Time Use Only\n\n"
-                    "📱 *You may now return to the app, paste this token, and click Verify!*"
-                )
-                await message.reply_text(app_success_text)
-            else:
-                # Critical UX: Tell the user if the admin hasn't generated enough tokens
-                await message.reply_text(
-                    f"⚠️ **Verification passed, but our database is empty!**\n\n"
-                    f"There are no tokens left to dispense. Please contact the administrator.\n"
-                    f"*(System error: {error_msg})*"
-                )
+            print("🟢 VERIFY: Passed time gap, claiming token...")
+            try:
+                # Fetch the token instead of generating one
+                token, error_msg = claim_pregenerated_token(session_data["telegram_user_id"])
+                print(f"🟢 VERIFY: Token claimed -> {token}")
+                
+                if token:
+                    print("🟢 VERIFY: Fetching custom message from MongoDB...")
+                    token_config = await db.settings.find_one({"_id": "token_msg_settings"})
+                    
+                    if token_config and token_config.get("text"):
+                        print("🟢 VERIFY: Custom message found, replacing {token}...")
+                        base_text = token_config.get("text")
+                        app_success_text = base_text.replace("{token}", token)
+                        token_image_id = token_config.get("image_id")
+                    else:
+                        print("🟢 VERIFY: No custom message, using default...")
+                        app_success_text = (
+                            "🎉 <b>VERIFICATION SUCCESSFUL</b> 🎉\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━\n"
+                            "Your secure session has been verified, and your one-time access token is ready.\n\n"
+                            "🔑 <b>Your Access Token:</b>\n"
+                            f"👉 <code>{token}</code> 👈\n"
+                            "*(Tap the token above to copy it instantly)*\n\n"
+                            "⏱ <b>Status:</b> Active & Assigned\n"
+                            "🛡 <b>Security:</b> One-Time Use Only\n\n"
+                            "📱 <i>You may now return to the app, paste this token, and click Verify!</i>"
+                        )
+                        token_image_id = None
+
+                    print("🟢 VERIFY: Attempting to send message to user...")
+                    from pyrogram.enums import ParseMode
+                    
+                    if token_image_id:
+                        await message.reply_photo(
+                            photo=token_image_id, 
+                            caption=app_success_text, 
+                            parse_mode=ParseMode.HTML
+                        )
+                    else:
+                        await message.reply_text(
+                            text=app_success_text, 
+                            parse_mode=ParseMode.HTML
+                        )
+                    print("✅ VERIFY: Message sent successfully!")
+                    
+                else:
+                    print(f"🔴 VERIFY: No tokens left! Error: {error_msg}")
+                    await message.reply_text(
+                        f"⚠️ **Verification passed, but our database is empty!**\n\n"
+                        f"There are no tokens left to dispense. Please contact the administrator.\n"
+                        f"*(System error: {error_msg})*"
+                    )
+                    
+            except Exception as e:
+                # IF THE BOT CHOKES, IT WILL SCREAM THE EXACT REASON RIGHT HERE
+                print(f"🔥 MASSIVE CRASH IN TOKEN DELIVERY: {str(e)}")
+                await message.reply_text(f"❌ **System crashed while delivering token:**\n`{str(e)}`")
         
         # --- COMMENTED CODE FOR FUTURE REFERENCE ---
         # Checks passed! Generate the 16-digit cryptographic Token

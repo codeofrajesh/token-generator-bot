@@ -26,7 +26,8 @@ async def admin_panel(client: Client, message: Message):
             InlineKeyboardButton("⏱ Edit Bypass Time", callback_data="admin_edit_bypass")
         ],
         [
-            InlineKeyboardButton("🖼 Edit Welcome Msg", callback_data="admin_edit_welcome")
+            InlineKeyboardButton("🖼 Edit Welcome Msg", callback_data="admin_edit_welcome"),
+            InlineKeyboardButton("🎟 Edit Token Msg", callback_data="admin_edit_token_msg")
         ],
         [   InlineKeyboardButton("📞 Edit Main URL", callback_data="admin_edit_main"),
             InlineKeyboardButton("📖 Edit How To Use", callback_data="admin_edit_howtouse")
@@ -132,7 +133,7 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
                     )
             else:
                 await query.answer("❌ Failed to delete shortener. Check logs.", show_alert=True)
-                
+
         elif data == "admin_update_firebase":
             # Set the state so the bot expects a file next
             admin_states[admin_id] = {"action": "waiting_for_firebase_json"}
@@ -168,7 +169,17 @@ async def admin_callbacks(client: Client, query: CallbackQuery):
                 "• **For Text Only:** Just type your new message and send it.\n"
                 "• **For Image + Text:** Send a photo and write your welcome message in the **caption** before sending.\n\n"
                 "*(Type `cancel` to abort)*"
+            )  
+
+        elif data == "admin_edit_token_msg":
+            admin_states[admin_id] = {"action": "waiting_for_token_msg"}
+            await query.message.edit_text(
+                "🎟 **Edit Token Success Message**\n\n"
+                "Please send me the new token message.\n\n"
+                "⚠️ **CRITICAL:** You MUST include `{token}` exactly like that somewhere in your message. The bot will automatically swap it out for the real token!\n\n"
+                "*(Type `cancel` to abort)*"
             )    
+
 
     except Exception as e:
         # THE FIX: Force the bot to print the exact error to your Telegram screen
@@ -358,32 +369,75 @@ async def admin_state_machine(client: Client, message: Message):
     # --- WELCOME MESSAGE LOGIC ---
     elif action == "waiting_for_welcome":
         image_id = None
-        welcome_text = ""
+        raw_text = ""
+        raw_entities = []
 
-        # PRESERVATION LOGIC: Extract raw HTML with all nested tags intact
+        # PRESERVATION 2.0: Grab the raw string and the Native Telegram Entities array
         if message.photo:
             image_id = message.photo.file_id
-            # .html is the magic Pyrogram property that preserves bold/italic/underline/blockquote
-            welcome_text = message.caption.html if message.caption else "Welcome!"
-            
+            raw_text = message.caption or "Welcome!"
+            raw_entities = message.caption_entities or []
         elif message.text:
-            welcome_text = message.text.html
-            
+            raw_text = message.text
+            raw_entities = message.entities or []
         else:
             await message.reply_text("⚠️ Please send either text or a photo with a caption.")
             return
 
-        # Save directly to your MongoDB 'settings' collection
+        # SERIALIZATION: Convert Pyrogram Entities into a dictionary format MongoDB can store
+        entities_list = []
+        for e in raw_entities:
+            entities_list.append({
+                "type": e.type.name,  # e.g., "BOLD", "BLOCKQUOTE", "SPOILER"
+                "offset": e.offset,
+                "length": e.length,
+                "url": e.url,
+                "custom_emoji_id": e.custom_emoji_id
+            })
+
+        # Save the raw text and the entity map to MongoDB
         await db.settings.update_one(
             {"_id": "welcome_settings"}, 
-            {"$set": {"text": welcome_text, "image_id": image_id}}, 
+            {"$set": {
+                "text": raw_text, 
+                "entities": entities_list, 
+                "image_id": image_id
+            }}, 
             upsert=True
         )
         
         # Clear the admin state
         del admin_states[admin_id]
-        await message.reply_text("✅ **Welcome message saved with full HTML formatting!**\nTest it by sending /start")
+        await message.reply_text("✅ **Welcome message saved with Native Telegram Formatting!**\n(Blockquotes and Spoilers are now fully supported!) Test it by sending /start")
 
+        # --- TOKEN SUCCESS MESSAGE LOGIC ---
+    elif action == "waiting_for_token_msg":
+        # 1. Safety Check: Did they include the placeholder?
+        text_check = message.text or message.caption or ""
+        if "{token}" not in text_check:
+            await message.reply_text("⚠️ **Error:** You forgot to include the `{token}` placeholder in your message! Please send it again with `{token}` included, or type `cancel`.")
+            return
+
+        image_id = None
+        raw_html = ""
+
+        # 2. Extract using HTML to allow safe dynamic injection later
+        if message.photo:
+            image_id = message.photo.file_id
+            raw_html = message.caption.html if message.caption else "Your token: <code>{token}</code>"
+        elif message.text:
+            raw_html = message.text.html
+
+        # 3. Save to MongoDB
+        await db.settings.update_one(
+            {"_id": "token_msg_settings"}, 
+            {"$set": {"text": raw_html, "image_id": image_id}}, 
+            upsert=True
+        )
+        
+        del admin_states[admin_id]
+        await message.reply_text("✅ **Token success message saved successfully!**")
+        
 # --- STATS COMMAND ---
 @Client.on_message(filters.command("stats") & filters.private)
 async def stats_command(client: Client, message: Message):
