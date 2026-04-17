@@ -57,7 +57,7 @@ def claim_pregenerated_token(user_id):
     """Fetches an unused token, automatically recycling abandoned ones."""
     try:
         # Connect to your Firebase tokens folder
-        ref = fdb.reference('tokens') 
+        ref = fdb.reference('token') 
         
         # 1. Fetch a batch of tokens that the APP says are unused (read == "0")
         # We limit to 200 to keep it lightning fast, but give us a good pool to pick from.
