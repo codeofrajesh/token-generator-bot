@@ -277,28 +277,75 @@ async def callback_handler(client: Client, query: CallbackQuery):
     # --- RETURN TO MAIN MENU ---
     if data == "main_menu_return":
         main_url = await db.get_main_url()
+        how_to_use_url = await db.get_how_to_use_url()
         dev_url = Config.DEVELOPER_URL
         
+        # Add the same URL safety checks here to prevent crashes
+        if not how_to_use_url or not how_to_use_url.startswith("http"):
+            how_to_use_url = "https://t.me/telegram"
+        if not main_url or not main_url.startswith("http"):
+            main_url = "https://t.me/telegram"
+            
         buttons = [
-            [InlineKeyboardButton("📢 TOKEN Channel", url=Config.JOIN_CHANNEL_URL)],
-            [
-                InlineKeyboardButton("🔑 Generate Key", callback_data="show_demo_servers"),
-                InlineKeyboardButton("👨‍💻 Developer", url=dev_url)
+            [InlineKeyboardButton("📖 How to USE", url=how_to_use_url),
+             InlineKeyboardButton("💬 Join Channel", url=main_url)
             ],
-            [InlineKeyboardButton("💬 Main group", url=main_url)]
+            [
+                InlineKeyboardButton("🔑 Generate TOKEN", url="https://t.me/gentokenRJbot?start=app_studyingredients")
+            ]
         ]
         
-        start_text = (
-            "✨ **Welcome to the Secure Token Generator!** ✨\n\n"
-            "I am your automated bridge for secure, token-based authentication.\n\n"
-            "**What I do:**\n"
-            "🔹 Generate cryptographic access tokens.\n"
-            "🔹 Protect links with anti-bypass timers.\n"
-            "🔹 Sync real-time with your app database.\n\n"
-            "👇 */help to know more*"
-        )
-
-        await query.message.edit_text(start_text, reply_markup=InlineKeyboardMarkup(buttons))
+        # 1. Fetch custom config from MongoDB
+        welcome_config = await db.settings.find_one({"_id": "welcome_settings"})
+        if welcome_config and welcome_config.get("text"):
+            start_text = welcome_config.get("text")
+            image_id = welcome_config.get("image_id")
+            saved_entities = welcome_config.get("entities", [])
+            
+            # DESERIALIZATION
+            reply_entities = []
+            for e in saved_entities:
+                try:
+                    reply_entities.append(
+                        MessageEntity(
+                            type=MessageEntityType[e["type"]],
+                            offset=e["offset"],
+                            length=e["length"],
+                            url=e.get("url"),
+                            custom_emoji_id=e.get("custom_emoji_id")
+                        )
+                    )
+                except Exception:
+                    continue
+                    
+            if image_id:
+                await query.message.delete()
+                await query.message.reply_photo(
+                    photo=image_id,
+                    caption=start_text,
+                    caption_entities=reply_entities,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            else:
+                await query.message.edit_text(
+                    text=start_text,
+                    entities=reply_entities,
+                    disable_web_page_preview=True,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                
+        else:
+            start_text = (
+                "✨ <b>Welcome to the Study Ingredients Token Generator!</b> ✨\n\n"
+                "I am your automated bridge for secure, token-based authentication.\n\n"
+                "👇 <i>/help to know more</i>"
+            )
+            await query.message.edit_text(
+                text=start_text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
         return
 
     # --- SHOW DEMO SERVERS SUBMENU ---
