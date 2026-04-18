@@ -34,14 +34,16 @@ async def start_command(client: Client, message: Message):
         dev_url = Config.DEVELOPER_URL
         if not how_to_use_url or not how_to_use_url.startswith("http"):
             how_to_use_url = "https://t.me/telegram"
-            
+        if not main_url or not main_url.startswith("http"):
+            main_url = "https://t.me/telegram"
+
         buttons = [
-            [InlineKeyboardButton("📖 How to USE", url=how_to_use_url)],
-            [
-                InlineKeyboardButton("🔑 Generate TOKEN", url="https://t.me/gentokenRJbot?start=app_studyingredients"),
-                InlineKeyboardButton("👨‍💻 Developer", url=dev_url)
+            [InlineKeyboardButton("📖 How to USE", url=how_to_use_url),
+             InlineKeyboardButton("💬Join Channel", url=main_url)
             ],
-            [InlineKeyboardButton("💬 Main group", url=main_url)]
+            [
+                InlineKeyboardButton("🔑 Generate TOKEN", url="https://t.me/gentokenRJbot?start=app_studyingredients")
+            ]
         ]
         
         # 1. Fetch custom config from MongoDB
