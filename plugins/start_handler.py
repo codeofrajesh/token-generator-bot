@@ -165,7 +165,7 @@ async def start_command(client: Client, message: Message):
                     if token_config and token_config.get("text"):
                         print("🟢 VERIFY: Custom message found, replacing {token}...")
                         base_text = token_config.get("text")
-                        app_success_text = base_text.replace("{token}", token)
+                        app_success_text = base_text.replace("{token}", f"<code>{token}</code>")
                         token_image_id = token_config.get("image_id")
                     else:
                         print("🟢 VERIFY: No custom message, using default...")
