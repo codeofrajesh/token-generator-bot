@@ -291,7 +291,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
              InlineKeyboardButton("💬 Join Channel", url=main_url)
             ],
             [
-                InlineKeyboardButton("🔑 Generate TOKEN", url="https://t.me/gentokenRJbot?start=app_studyingredients")
+                InlineKeyboardButton("🔑 Generate TOKEN", url="https://t.me/ingredient_keygen_bot?start=app_studyingredients")
             ]
         ]
         
